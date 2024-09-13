@@ -1,2 +1,2 @@
 # What_Game
-My Attempt at creating a Movie Recommender System 
+My Attempt at creating a Game Recommender System 
