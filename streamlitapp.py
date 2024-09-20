@@ -8,16 +8,16 @@ import requests
 client_id = '2s6fe3ts3br2aikeue6v2mvpspjkf3'
 access_token = 'lvc89f0f0fl8xzxo62ovegnz1dqik4'
 
-# Your IGDB API headers
+# IGDB API headers
 headers = {
     'Client-ID': client_id,
     'Authorization': f'Bearer {access_token}',
 }
 
-# Function to fetch game cover by Cover ID
+# Cache the game cover fetching function
+@st.cache_data
 def fetch_cover_image(cover_id):
     try:
-        # Query IGDB for the cover image
         response = requests.post(
             'https://api.igdb.com/v4/covers',
             headers=headers,
@@ -28,101 +28,110 @@ def fetch_cover_image(cover_id):
             if data and 'image_id' in data[0]:
                 image_id = data[0]['image_id']
                 return f"https://images.igdb.com/igdb/image/upload/t_cover_big/{image_id}.jpg"
-        else:
-            st.error(f"Failed to fetch cover for ID {cover_id}: {response.text}")
+        st.error(f"Failed to fetch cover for ID {cover_id}: {response.text}")
     except Exception as e:
         st.error(f"Error fetching cover: {e}")
     return None
 
-# Load the games data
-games_dat = pd.read_csv('filtered_igdb_games_data.csv')
+# Cache the CSV and similarity matrix loading
+@st.cache_data
+def load_games_data():
+    return pd.read_csv('filtered_igdb_games_data.csv')
 
-# Load the similarity matrix
-similarity_matrix = np.load('similarity_matrix.npy')
+@st.cache_data
+def load_similarity_matrix():
+    return np.load('similarity_matrix.npy')
+
+# Load the games data and similarity matrix
+games_dat = load_games_data()
+similarity_matrix = load_similarity_matrix()
 
 # Function to find a close match of a game
 def get_close_match_game(user_input_game):
-    list_of_all_games = games_dat['Name'].tolist()
-    find_close_match = dl.get_close_matches(user_input_game, list_of_all_games)
-    if find_close_match:
-        return find_close_match[0]
-    return None
+    games_list = games_dat['Name'].tolist()
+    return dl.get_close_matches(user_input_game, games_list, n=1)[0] if games_list else None
 
 # Streamlit User Inputs
 st.title("Game Recommendation System")
-
 user_input_game = st.text_input('Enter your favorite game name:')
 console_input = st.text_input('Enter the system you are using (e.g., Xbox One, PlayStation #, PC):')
 
-# If user provides input
+# Check user input and proceed with recommendations
 if user_input_game and console_input:
     close_match = get_close_match_game(user_input_game)
 
     if close_match:
-        st.subheader(f"Games suggested for you based on \"{close_match}\" on {console_input}:")
+        st.subheader(f"Recommendations based on \"{close_match}\" on {console_input}:")
 
-        # Get the index of the matched game
+        # Display the user-input game separately
         index_of_the_game = games_dat[games_dat['Name'] == close_match].index[0]
 
-        # Calculate similarity scores
-        similarity_scores = list(enumerate(similarity_matrix[index_of_the_game]))
+        # Get details of the user-input game
+        game_name = games_dat['Name'][index_of_the_game]
+        cover_id = games_dat['Cover'][index_of_the_game]
+        storyline = games_dat['Storyline'][index_of_the_game]
+        summary = games_dat['Summary'][index_of_the_game]
 
-        # Sort games by similarity score
-        sorted_similar_games = sorted(similarity_scores, key=lambda x: x[1], reverse=True)
+        # Fetch cover image for the user-input game or use placeholder
+        cover_image_url = fetch_cover_image(cover_id) if pd.notna(cover_id) else 'https://via.placeholder.com/150'
 
-        displayed_games = set()  # Track displayed games to avoid duplicates
-        max_results = 30  # Limit the number of results (5 by 6 grid)
+        # Display the user-input game in its own row
+        st.write("### Your Favorite Game:")
+        st.image(cover_image_url, width=150, caption=game_name)
+        with st.expander(f"More info about {game_name}"):
+            st.write(f"**Storyline**: {storyline}")
+            st.write(f"**Summary**: {summary}")
 
-        # Check if required columns exist in the DataFrame
-        if 'Cover' not in games_dat.columns or 'Storyline' not in games_dat.columns or 'Summary' not in games_dat.columns:
-            st.error("The DataFrame does not contain required columns (Cover, Storyline, or Summary).")
-            st.stop()
+        # Get similarity scores for similar games (excluding the user-input game)
+        similarity_scores = sorted(enumerate(similarity_matrix[index_of_the_game]), key=lambda x: x[1], reverse=True)
+        similarity_scores = [score for score in similarity_scores if score[0] != index_of_the_game]
 
-        # Create a grid layout with 5 columns and 6 rows
-        rows = 6
-        cols_per_row = 5
+        # Collect the names and indices of the recommended games
+        recommended_games = []
+        max_results = 30
+        for score in similarity_scores[:max_results]:
+            index = score[0]
+            game_name = games_dat['Name'][index]
+            recommended_games.append((game_name, index))
+
+        # Create a selectbox to select a game from recommended games
+        options = [('Select a game', None)] + recommended_games
+        selected_option = st.selectbox('Select a game to see more details:', options, format_func=lambda x: x[0])
+
+        # If a game is selected, display the detailed view right below the select box
+        if selected_option[1] is not None:
+            selected_game_name, selected_game_index = selected_option
+            selected_cover_id = games_dat['Cover'][selected_game_index]
+            selected_storyline = games_dat['Storyline'][selected_game_index]
+            selected_summary = games_dat['Summary'][selected_game_index]
+
+            selected_cover_image_url = fetch_cover_image(selected_cover_id) if pd.notna(selected_cover_id) else 'https://via.placeholder.com/150'
+
+            # Create a detailed view
+            st.write(f"### {selected_game_name}")
+            st.image(selected_cover_image_url, width=300)  # Larger image
+
+            st.write(f"**Storyline**:")
+            st.write(selected_storyline)
+            st.write(f"**Summary**:")
+            st.write(selected_summary)
+
+        # Display the grid of images after the detailed view
+        st.write("### Similar Games:")
+        rows, cols_per_row = 6, 5
         for row in range(rows):
-            # Create a set of columns for each row
             columns = st.columns(cols_per_row)
-
-            # Display 5 games in each row
             for col_idx in range(cols_per_row):
                 game_idx = row * cols_per_row + col_idx
-                if game_idx >= max_results:
-                    break  # Stop if we reach the max number of games
+                if game_idx >= len(recommended_games):
+                    break
+                index = recommended_games[game_idx][1]
+                game_name = recommended_games[game_idx][0]
+                cover_id = games_dat['Cover'][index]
+                cover_image_url = fetch_cover_image(cover_id) if pd.notna(cover_id) else 'https://via.placeholder.com/150'
 
-                game = sorted_similar_games[game_idx]
-                index = game[0]
-                if index in displayed_games:
-                    continue
-
-                # Get game details
-                game_name = games_dat['Name'][index]
-                cover_id = games_dat['Cover'][index]  # Assuming 'Cover' contains the cover ID from IGDB
-                storyline = games_dat['Storyline'][index]
-                summary = games_dat['Summary'][index]
-
-                # Fetch the cover image from IGDB if the Cover ID is valid
-                cover_image_url = None
-                if pd.notna(cover_id):
-                    cover_image_url = fetch_cover_image(cover_id)
-
-                if not cover_image_url:
-                    # Use a placeholder if the cover image couldn't be fetched
-                    cover_image_url = 'https://via.placeholder.com/150'
-
-                try:
-                    # Display the cover image and details in each column
-                    with columns[col_idx]:
-                        st.image(cover_image_url, width=150, caption=game_name)
-                        with st.expander(f"More info about {game_name}"):
-                            st.write(f"**Storyline**: {storyline}")
-                            st.write(f"**Summary**: {summary}")
-                except Exception as e:
-                    st.error(f"Error displaying image for {game_name}: {e}")
-                    continue
-
-                displayed_games.add(index)
+                with columns[col_idx]:
+                    st.image(cover_image_url, width=150, caption=game_name)
 
     else:
         st.warning(f'No close match found for "{user_input_game}". Please try another game.')
