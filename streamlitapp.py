@@ -76,7 +76,7 @@ if user_input_game and console_input:
         cover_image_url = fetch_cover_image(cover_id) if pd.notna(cover_id) else 'https://via.placeholder.com/150'
 
         # Display the user-input game in its own row
-        st.write("### Your Favorite Game:")
+        st.write("### Your game of choice:")
         st.image(cover_image_url, width=150, caption=game_name)
         with st.expander(f"More info about {game_name}"):
             st.write(f"**Storyline**: {storyline}")
