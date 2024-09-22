@@ -58,11 +58,16 @@ To run this project, you need the following:
   - `numpy`
   - `requests`
   - `difflib`
+  - `matplotlib`
+  - `seaborn`
+  - `re`
+  - `time`
+  - `scikit-learn`
 
 You can install the required dependencies using the following command:
 
 ```bash
-pip install streamlit pandas numpy requests difflib
+pip install numpy pandas matplotlib seaborn scikit-learn streamlit requests
 ```
 
 ## Setup Instructions
