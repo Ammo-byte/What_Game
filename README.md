@@ -1,4 +1,3 @@
-
 # What_Game ? : The Game Recommender System
 
 ## Overview
